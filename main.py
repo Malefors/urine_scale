@@ -6,7 +6,7 @@ import time
 import logging
 
 # Serial communication parameters
-SERIAL_PORT = '/dev/ttyUSB0'  # Update to your serial port
+SERIAL_PORT = '/dev/ttyUSB0'
 BAUD_RATE = 9600
 
 # Database parameters
@@ -16,7 +16,7 @@ DATABASE_PATH = 'sensor_data.db'
 FTP_HOST = 'ftp.yourserver.com'
 FTP_USER = 'your_username'
 FTP_PASS = 'your_password'
-REMOTE_FILE_NAME = 'backup_sensor_data.db'  # Name of the file on the FTP server
+REMOTE_FILE_NAME = 'backup_sensor_data.db'
 
 # Setup logging
 logging.basicConfig(filename='app.log', level=logging.DEBUG,
@@ -28,7 +28,7 @@ c = conn.cursor()
 
 # Create the sensor data table if it doesn't exist
 c.execute('''CREATE TABLE IF NOT EXISTS sensor_data
-             (timestamp TEXT, value TEXT)''')
+             (timestamp TEXT, value REAL)''')
 conn.commit()
 
 def read_serial_data():
@@ -42,7 +42,8 @@ def read_serial_data():
 
 def save_data_to_db(data):
     try:
-        c.execute("INSERT INTO sensor_data (timestamp, value) VALUES (datetime('now'), ?)", (data,))
+        numeric_data = float(data)
+        c.execute("INSERT INTO sensor_data (timestamp, value) VALUES (datetime('now'), ?)", (numeric_data,))
         conn.commit()
         logging.info(f"Data saved to database: {data}")
     except sqlite3.DatabaseError as e:
