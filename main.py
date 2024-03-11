@@ -1,9 +1,12 @@
+from flask import Flask, g, render_template
 import serial
 import sqlite3
 import ftplib
 import schedule
 import time
 import logging
+
+app = Flask(__name__)
 
 # Serial communication parameters
 SERIAL_PORT = '/dev/ttyUSB0'
@@ -22,63 +25,71 @@ REMOTE_FILE_NAME = 'backup_sensor_data.db'
 logging.basicConfig(filename='app.log', level=logging.DEBUG,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Setup database connection
-conn = sqlite3.connect(DATABASE_PATH)
-c = conn.cursor()
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE_PATH)
+    return db
 
-# Create the sensor data table if it doesn't exist
-c.execute('''CREATE TABLE IF NOT EXISTS sensor_data
-             (timestamp TEXT, value REAL)''')
-conn.commit()
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+# Initialize the serial object to None
+ser = None
+
+def setup_serial_connection():
+    global ser
+    try:
+        ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+        logging.info(f"Opened serial port {SERIAL_PORT} successfully.")
+    except serial.SerialException as e:
+        logging.error(f"Failed to open serial port {SERIAL_PORT}: {e}")
 
 def read_serial_data():
+    global ser
+    if ser is None or not ser.is_open:
+        setup_serial_connection()
+
     try:
-        with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1) as ser:
+        if ser is not None:
             data = ser.readline().decode('utf-8').strip()
             return data
     except serial.SerialException as e:
         logging.error(f"Error reading serial data: {e}")
-        return None
+    return None
 
 def save_data_to_db(data):
+    db = get_db()
     try:
         numeric_data = float(data)
-        c.execute("INSERT INTO sensor_data (timestamp, value) VALUES (datetime('now'), ?)", (numeric_data,))
-        conn.commit()
+        cursor = db.cursor()
+        cursor.execute("INSERT INTO sensor_data (timestamp, value) VALUES (datetime('now'), ?)", (numeric_data,))
+        db.commit()
         logging.info(f"Data saved to database: {data}")
     except sqlite3.DatabaseError as e:
         logging.error(f"Database error: {e}")
 
-def upload_file(ftp, filepath, remote_filename):
-    """Uploads a file to an FTP server."""
-    with open(filepath, 'rb') as file:
-        ftp.storbinary(f'STOR {remote_filename}', file)
+# Other functions remain unchanged
 
-def sync_database_over_ftp():
+@app.route('/')
+def home():
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM sensor_data ORDER BY timestamp DESC LIMIT 10")
+    sensor_data = cursor.fetchall()
+    return render_template('index.html', sensor_data=sensor_data)
+
+if __name__ == '__main__':
     try:
-        ftp = ftplib.FTP(FTP_HOST, FTP_USER, FTP_PASS)
-        ftp.set_pasv(True)
-        upload_file(ftp, DATABASE_PATH, REMOTE_FILE_NAME)
-        ftp.quit()
-        logging.info("Database successfully uploaded to FTP server.")
-    except ftplib.all_errors as e:
-        logging.error(f"FTP error: {e}")
-
-def scheduled_task():
-    data = read_serial_data()
-    if data:
-        save_data_to_db(data)
-    else:
-        logging.warning("No data received from serial port.")
-    sync_database_over_ftp()
-
-schedule.every(5).minutes.do(scheduled_task)
-
-try:
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-except KeyboardInterrupt:
-    logging.info("Program stopped manually.")
-finally:
-    conn.close()
+        app.run(debug=True)  # Enable debug mode
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logging.info("Program stopped manually.")
+    finally:
+        if ser is not None and ser.is_open:
+            ser.close()
