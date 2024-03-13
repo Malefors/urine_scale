@@ -9,9 +9,9 @@ SERIAL_PORT = '/dev/cu.usbserial-10'
 BAUD_RATE = 9600
 
 # FTP server credentials
-FTP_HOST = 'ftp.matsvinn.se'
-FTP_USER = 'urine@matsvinn.se'
-FTP_PASS = 'fiskarnaihavet'
+FTP_HOST = ''
+FTP_USER = ''
+FTP_PASS = ''
 REMOTE_FILE_NAME = 'backup_sensor_data.db'
 
 # Database parameters
